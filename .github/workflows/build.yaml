@@ -56,7 +56,7 @@ jobs:
 
       - name: Setup Gradle (if no wrapper)
         uses: gradle/actions/setup-gradle@v3
-
+   
       - name: Build APK with Gradle
         run: |
           cd /tmp/android-project
@@ -65,10 +65,11 @@ jobs:
             chmod +x gradlew
             ./gradlew assembleDebug -x checkDebugAarMetadata --no-daemon --stacktrace
           else
-            echo "⚠️ 未找到 gradlew，使用系统 Gradle 编译"
-            gradle assembleDebug -x checkDebugAarMetadata --no-daemon --stacktrace
+            echo "⚠️ 未找到 gradlew，生成 wrapper 后编译"
+            gradle wrapper --no-daemon
+            chmod +x gradlew
+            ./gradlew assembleDebug -x checkDebugAarMetadata --no-daemon --stacktrace
           fi
-
 
       - name: Find and upload APK
         uses: actions/upload-artifact@v4
