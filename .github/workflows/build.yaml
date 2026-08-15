@@ -44,7 +44,7 @@ jobs:
           echo "📂 项目结构:"
           ls -la /tmp/android-project
 
-      - name: Auto-fix compileSdk version
+      - name: Auto-fix compileSdk to 36
         run: |
           cd /tmp/android-project
           
@@ -54,14 +54,14 @@ jobs:
             echo "🔧 找到构建文件: $BUILD_FILE"
             
             if [[ "$BUILD_FILE" == *.kts ]]; then
-              sed -i 's/compileSdk[[:space:]]*=[[:space:]]*[0-9]\+/compileSdk = 37/g' "$BUILD_FILE"
-              sed -i 's/compileSdkVersion[[:space:]]*([0-9]\+)/compileSdkVersion(37)/g' "$BUILD_FILE"
+              sed -i 's/compileSdk[[:space:]]*=[[:space:]]*[0-9]\+/compileSdk = 36/g' "$BUILD_FILE"
+              sed -i 's/compileSdkVersion[[:space:]]*([0-9]\+)/compileSdkVersion(36)/g' "$BUILD_FILE"
             else
-              sed -i 's/compileSdk[[:space:]]\+[0-9]\+/compileSdk 37/g' "$BUILD_FILE"
-              sed -i 's/compileSdkVersion[[:space:]]\+[0-9]\+/compileSdkVersion 37/g' "$BUILD_FILE"
+              sed -i 's/compileSdk[[:space:]]\+[0-9]\+/compileSdk 36/g' "$BUILD_FILE"
+              sed -i 's/compileSdkVersion[[:space:]]\+[0-9]\+/compileSdkVersion 36/g' "$BUILD_FILE"
             fi
             
-            echo "✅ 已自动修复 compileSdk 为 37"
+            echo "✅ 已自动修复 compileSdk 为 36"
             grep -n "compileSdk" "$BUILD_FILE" || true
           else
             echo "⚠️ 未找到 app/build.gradle*，跳过修复"
@@ -76,10 +76,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK Platform 37
+      - name: Install Android SDK Platform 36
         run: |
-          sdkmanager "platforms;android-37" "build-tools;37.0.0"
-          sdkmanager --list_installed | grep android-37
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          sdkmanager --list_installed | grep android-36
 
       - name: Setup Gradle (if no wrapper)
         uses: gradle/actions/setup-gradle@v3
