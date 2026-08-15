@@ -61,7 +61,7 @@ jobs:
       - name: 安装平台与构建工具（compileSdk 37，Android 17 已于 2026年6月发布）
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 
       - name: 设置 Gradle（AGP 9.1.1 硬性要求 Gradle >=9.1.0）
         uses: gradle/actions/setup-gradle@v4
