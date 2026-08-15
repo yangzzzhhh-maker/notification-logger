@@ -1,4 +1,4 @@
-name: Android ZIP 云编译（Kotlin 2.3.0 / compileSdk 35）
+name: Android ZIP 云编译（Kotlin 2.3.0 / compileSdk 37 / AGP 9.1.1）
 
 on:
   push:
@@ -58,22 +58,22 @@ jobs:
       - name: 设置 Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 安装平台与构建工具（compileSdk 35，已发布稳定版）
+      - name: 安装平台与构建工具（compileSdk 37，Android 17 已于 2026年6月发布）
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
 
-      - name: 设置 Gradle（与 Kotlin 2.3.0 兼容）
+      - name: 设置 Gradle（AGP 9.1.1 硬性要求 Gradle >=9.1.0）
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: '9.1.0'
 
       - name: 生成 Gradle Wrapper（源码里缺 gradlew 脚本）
         working-directory: ${{ env.SOURCE_DIR }}
         run: |
           if [ ! -f gradlew ]; then
             echo "未检测到 gradlew，正在生成 Wrapper..."
-            gradle wrapper --gradle-version 8.11.1
+            gradle wrapper --gradle-version 9.1.0
           fi
           chmod +x gradlew
 
