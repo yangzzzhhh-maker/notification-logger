@@ -30,7 +30,6 @@ jobs:
           mkdir -p /tmp/android-src
           unzip -o "$ZIP_FILE" -d /tmp/android-src
           
-          # 处理 ZIP 内多套一层目录的情况
           if [ $(ls -1 /tmp/android-src | wc -l) -eq 1 ]; then
             SUBDIR=$(ls -1 /tmp/android-src | head -n 1)
             if [ -d "/tmp/android-src/$SUBDIR" ]; then
@@ -44,6 +43,33 @@ jobs:
           
           echo "📂 项目结构:"
           ls -la /tmp/android-project
+
+      - name: Auto-fix compileSdk version
+        run: |
+          cd /tmp/android-project
+          
+          # 查找 app/build.gradle 或 app/build.gradle.kts
+          BUILD_FILE=$(find . -path "*/app/build.gradle*" | head -n 1)
+          
+          if [ -n "$BUILD_FILE" ]; then
+            echo "🔧 找到构建文件: $BUILD_FILE"
+            
+            if [[ "$BUILD_FILE" == *.kts ]]; then
+              # Kotlin DSL: compileSdk = 35 → compileSdk = 37
+              sed -i 's/compileSdk[[:space:]]*=[[:space:]]*[0-9]\+/compileSdk = 37/g' "$BUILD_FILE"
+              # 也处理 compileSdkVersion
+              sed -i 's/compileSdkVersion[[:space:]]*([0-9]\+)/compileSdkVersion(37)/g' "$BUILD_FILE"
+            else
+              # Groovy DSL: compileSdk 35 → compileSdk 37
+              sed -i 's/compileSdk[[:space:]]\+[0-9]\+/compileSdk 37/g' "$BUILD_FILE"
+              sed -i 's/compileSdkVersion[[:space:]]\+[0-9]\+/compileSdkVersion 37/g' "$BUILD_FILE"
+            fi
+            
+            echo "✅ 已自动修复 compileSdk 为 37"
+            grep -n "compileSdk" "$BUILD_FILE" || true
+          else
+            echo "⚠️ 未找到 app/build.gradle*，跳过修复"
+          fi
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
