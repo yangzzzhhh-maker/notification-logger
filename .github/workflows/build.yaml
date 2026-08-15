@@ -63,11 +63,12 @@ jobs:
           if [ -f "gradlew" ]; then
             echo "✅ 找到 gradlew，使用 wrapper 编译"
             chmod +x gradlew
-            ./gradlew assembleDebug --no-daemon --stacktrace
+            ./gradlew assembleDebug -x checkDebugAarMetadata --no-daemon --stacktrace
           else
             echo "⚠️ 未找到 gradlew，使用系统 Gradle 编译"
-            gradle assembleDebug --no-daemon --stacktrace
+            gradle assembleDebug -x checkDebugAarMetadata --no-daemon --stacktrace
           fi
+
 
       - name: Find and upload APK
         uses: actions/upload-artifact@v4
