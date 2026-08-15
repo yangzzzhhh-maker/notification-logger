@@ -48,19 +48,15 @@ jobs:
         run: |
           cd /tmp/android-project
           
-          # 查找 app/build.gradle 或 app/build.gradle.kts
           BUILD_FILE=$(find . -path "*/app/build.gradle*" | head -n 1)
           
           if [ -n "$BUILD_FILE" ]; then
             echo "🔧 找到构建文件: $BUILD_FILE"
             
             if [[ "$BUILD_FILE" == *.kts ]]; then
-              # Kotlin DSL: compileSdk = 35 → compileSdk = 37
               sed -i 's/compileSdk[[:space:]]*=[[:space:]]*[0-9]\+/compileSdk = 37/g' "$BUILD_FILE"
-              # 也处理 compileSdkVersion
               sed -i 's/compileSdkVersion[[:space:]]*([0-9]\+)/compileSdkVersion(37)/g' "$BUILD_FILE"
             else
-              # Groovy DSL: compileSdk 35 → compileSdk 37
               sed -i 's/compileSdk[[:space:]]\+[0-9]\+/compileSdk 37/g' "$BUILD_FILE"
               sed -i 's/compileSdkVersion[[:space:]]\+[0-9]\+/compileSdkVersion 37/g' "$BUILD_FILE"
             fi
@@ -79,6 +75,11 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK Platform 37
+        run: |
+          sdkmanager "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager --list_installed | grep android-37
 
       - name: Setup Gradle (if no wrapper)
         uses: gradle/actions/setup-gradle@v3
