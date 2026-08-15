@@ -1,83 +1,148 @@
-# .github/workflows/build-apk.yml
-name: Build APK from ZIP
+name: Android ZIP 云编译（兼容 LiquidGlass / SDK 37）
 
 on:
   push:
-    branches: [ main, master ]
     paths:
       - '*.zip'
+      - '*.ZIP'
   workflow_dispatch:
 
 jobs:
   build:
+    name: 解压并编译 APK
     runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
-      - name: Checkout repository
+      - name: 检出仓库
         uses: actions/checkout@v4
 
-      - name: Find and extract ZIP file
+      - name: 查找根目录 ZIP
+        id: find-zip
         run: |
-          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+          ZIP_FILE=$(find . -maxdepth 1 -type f \( -iname "*.zip" \) | head -n 1)
           if [ -z "$ZIP_FILE" ]; then
-            echo "❌ 未在根目录找到 .zip 文件"
+            echo "错误：根目录没有找到 .zip 文件"
+            ls -la
             exit 1
           fi
-          echo "📦 找到 ZIP: $ZIP_FILE"
-          mkdir -p /tmp/android-src
-          unzip -o "$ZIP_FILE" -d /tmp/android-src
-          if [ $(ls -1 /tmp/android-src | wc -l) -eq 1 ]; then
-            SUBDIR=$(ls -1 /tmp/android-src | head -n 1)
-            if [ -d "/tmp/android-src/$SUBDIR" ]; then
-              mv /tmp/android-src/$SUBDIR /tmp/android-project
-            else
-              mv /tmp/android-src /tmp/android-project
-            fi
-          else
-            mv /tmp/android-src /tmp/android-project
-          fi
-          echo "📂 项目结构:"
-          ls -la /tmp/android-project
+          echo "找到 ZIP: $ZIP_FILE"
+          echo "zip_file=$ZIP_FILE" >> $GITHUB_OUTPUT
+          echo "zip_name=$(basename "$ZIP_FILE")" >> $GITHUB_OUTPUT
 
-      - name: Suppress AAR version check
+      - name: 解压源码
         run: |
-          cd /tmp/android-project
-          echo "android.suppressUnsupportedCompileSdk=35" >> gradle.properties
-          echo "✅ 已禁用 AAR 版本检查"
+          mkdir -p source
+          unzip -q "${{ steps.find-zip.outputs.zip_file }}" -d source
 
-      - name: Setup JDK 21
+          # 自动定位真正的项目根目录（兼容多一层文件夹）
+          if [ -f source/gradlew ] || [ -f source/build.gradle.kts ] || [ -f source/settings.gradle.kts ]; then
+            echo "SOURCE_DIR=source" >> $GITHUB_ENV
+          else
+            # 常见情况：NotificationLogger/ 这种多一层
+            CANDIDATE=$(find source -maxdepth 2 -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" -o -name "build.gradle.kts" -o -name "build.gradle" \) | head -n 1)
+            if [ -z "$CANDIDATE" ]; then
+              echo "错误：解压后找不到 Android 项目特征文件"
+              find source -maxdepth 3 | head -50
+              exit 1
+            fi
+            SOURCE_DIR=$(dirname "$CANDIDATE")
+            echo "SOURCE_DIR=$SOURCE_DIR" >> $GITHUB_ENV
+            echo "定位到项目目录: $SOURCE_DIR"
+          fi
+
+      - name: 设置 JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
           distribution: 'temurin'
+          java-version: '17'
 
-      - name: Setup Android SDK
+      - name: 设置 Android SDK + 安装 36/37
         uses: android-actions/setup-android@v3
 
-      - name: Setup Gradle (if no wrapper)
-        uses: gradle/actions/setup-gradle@v3
-   
-      - name: Build APK with Gradle
+      - name: 安装平台与构建工具（含 API 37 兼容处理）
         run: |
-          cd /tmp/android-project
-          if [ -f "gradlew" ]; then
-            echo "✅ 找到 gradlew，使用 wrapper 编译"
-            chmod +x gradlew
-            ./gradlew assembleDebug -x checkDebugAarMetadata --no-daemon --stacktrace
-          else
-            echo "⚠️ 未找到 gradlew，生成 wrapper 后编译"
-            gradle wrapper --no-daemon
-            chmod +x gradlew
-            ./gradlew assembleDebug -x checkDebugAarMetadata --no-daemon --stacktrace
+          yes | sdkmanager --licenses >/dev/null || true
+
+          # 安装常用组件
+          sdkmanager "platform-tools" "cmdline-tools;latest" || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
+
+          # API 37 在 runner 上通常叫 android-37.0
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0" || \
+          sdkmanager "platforms;android-37" || true
+
+          # 关键软链接，让 Gradle 能找到 android-37
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -d "$SDK_ROOT/platforms/android-37.0" ] && [ ! -e "$SDK_ROOT/platforms/android-37" ]; then
+            ln -sfn android-37.0 "$SDK_ROOT/platforms/android-37"
+            echo "已创建软链接: platforms/android-37 -> android-37.0"
           fi
 
-      - name: Find and upload APK
+          echo "当前已安装的 platforms:"
+          ls -la "$SDK_ROOT/platforms/" || true
+
+      - name: 设置 Gradle（自动下载正确版本）
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'   # 对 Kotlin 2.3.x 和现代 AGP 足够友好
+
+      - name: 生成 Gradle Wrapper（如果缺失）
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          if [ ! -f gradlew ]; then
+            echo "未检测到 gradlew，正在生成 Wrapper..."
+            gradle wrapper --gradle-version 8.11.1
+          fi
+          chmod +x gradlew
+
+      - name: 强制提升 compileSdk / targetSdk 到 37（解决 AAR 元数据检查）
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          # 处理 app/build.gradle.kts 或 app/build.gradle
+          for f in app/build.gradle.kts app/build.gradle build.gradle.kts build.gradle; do
+            if [ -f "$f" ]; then
+              echo "正在修补 $f ..."
+              # 把 compileSdk / compileSdkVersion 改成 37
+              sed -i -E 's/compileSdk\s*=\s*[0-9]+/compileSdk = 37/g' "$f" || true
+              sed -i -E 's/compileSdkVersion\s+[0-9]+/compileSdkVersion 37/g' "$f" || true
+              sed -i -E 's/targetSdk\s*=\s*[0-9]+/targetSdk = 37/g' "$f" || true
+              sed -i -E 's/targetSdkVersion\s+[0-9]+/targetSdkVersion 37/g' "$f" || true
+              # 兼容新写法 compileSdk { version = release(xx) }
+              sed -i -E 's/version\s*=\s*release\([0-9]+\)/version = release(37)/g' "$f" || true
+            fi
+          done
+
+          # 同时处理可能存在的 libs.versions.toml
+          if [ -f gradle/libs.versions.toml ]; then
+            sed -i -E 's/compileSdk\s*=\s*"[0-9]+"/compileSdk = "37"/g' gradle/libs.versions.toml || true
+          fi
+
+          echo "修补完成，关键 SDK 配置预览："
+          grep -n -E 'compileSdk|targetSdk|compileSdkVersion|targetSdkVersion' app/build.gradle* build.gradle* 2>/dev/null || true
+
+      - name: 编译 Debug APK
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          # 优先正常编译；如果 AAR 检查仍失败，再跳过该任务（兜底）
+          ./gradlew assembleDebug --stacktrace --no-daemon \
+            || ./gradlew assembleDebug -x checkDebugAarMetadata --stacktrace --no-daemon
+
+      - name: 查找并复制 APK
+        run: |
+          APK_PATH=$(find ${{ env.SOURCE_DIR }} -path "*/build/outputs/apk/**/*.apk" -type f | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "错误：未找到 APK，列出所有 apk："
+            find ${{ env.SOURCE_DIR }} -name "*.apk" -type f || true
+            exit 1
+          fi
+          echo "找到 APK: $APK_PATH"
+          cp "$APK_PATH" ./app-debug.apk
+          ls -lh app-debug.apk
+
+      - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: apk-release
-          path: |
-            /tmp/android-project/**/build/outputs/apk/debug/*.apk
-            /tmp/android-project/**/build/outputs/apk/release/*.apk
-          if-no-files-found: warn
+          name: apk-\( {{ steps.find-zip.outputs.zip_name }}- \){{ github.run_number }}
+          path: app-debug.apk
           retention-days: 7
-
